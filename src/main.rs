@@ -1,4 +1,4 @@
-mod cpu;
+mod chip;
 
 fn main() {
 
