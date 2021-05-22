@@ -3,7 +3,8 @@ use rand::Rng;
 pub struct CPU {
     v: [u8; 16],
     pc: u16,
-    i: u16
+    i: u16,
+    stack: Vec<u16>
 }
 
 const F: usize = 0x0F;
@@ -14,7 +15,8 @@ impl CPU {
         CPU {
             v: [0; 16],
             pc: 0x0100,
-            i: 0x0000
+            i: 0x0000,
+            stack: Vec::new()
         }
     }
 
@@ -160,8 +162,9 @@ impl CPU {
     }
 
     /// CALL - Call subroutine at given instruction
-    fn call(&mut self, _instruction: u16) {
-        // TODO
+    fn call(&mut self, instruction: u16) {
+        self.stack.push(self.pc);
+        self.pc = instruction
     }
 
     /// Get next instruction (and advance PC by 2 in doing so)
