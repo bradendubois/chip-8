@@ -1,9 +1,11 @@
 use rand::Rng;
+use std::cmp::max;
 
 pub struct CPU {
     v: [u8; 16],
     pc: u16,
     i: u16,
+    delay_timer: u8,
     stack: Vec<u16>
 }
 
@@ -16,16 +18,15 @@ impl CPU {
             v: [0; 16],
             pc: 0x0100,
             i: 0x0000,
+            delay_timer: 0,
             stack: Vec::new()
         }
     }
 
-    pub fn table(&mut self, instruction: u16) {
-
+    pub fn execute(&mut self, instruction: u16) {
 
         let x = ((instruction & 0x0F00) >> 8) as u8 as usize;
         let y = ((instruction & 0x00F0) >> 4) as u8 as usize;
-
 
         let nnn = instruction & 0x0FFF;
         let nn = (instruction & 0x00FF) as u8;
@@ -150,10 +151,29 @@ impl CPU {
                 }
             },
 
-            0xF000 => {},
+            0xF000 => {
+
+                match nn {
+
+                    0x07 => self.v[x] = self.delay_timer,
+
+                    0x0A => (),
+
+                    0x15 => self.delay_timer = self.v[x],
+
+
+
+                    _ => panic!("unmapped instruction: {}", instruction)
+
+
+                }
+
+            },
 
             _ => panic!("unknown instruction: {}", instruction)
         };
+
+        self.delay_timer = max(0, self.delay_timer - 1);
     }
 
     /// JUMP - Jump to given instruction
