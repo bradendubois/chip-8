@@ -6,6 +6,7 @@ pub struct CPU {
     pc: u16,
     i: u16,
     delay_timer: u8,
+    sound_timer: u8,
     stack: Vec<u16>
 }
 
@@ -19,6 +20,7 @@ impl CPU {
             pc: 0x0100,
             i: 0x0000,
             delay_timer: 0,
+            sound_timer: 0,
             stack: Vec::new()
         }
     }
@@ -160,7 +162,7 @@ impl CPU {
                     0x0A => (),
 
                     0x15 => self.delay_timer = self.v[x],
-
+                    0x18 => self.sound_timer = self.v[x],
 
 
                     _ => panic!("unmapped instruction: {}", instruction)
