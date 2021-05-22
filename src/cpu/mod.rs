@@ -94,6 +94,23 @@ impl CPU {
         };
     }
 
+    /// JUMP - Jump to given instruction
+    fn jump(&mut self, instruction: u16) {
+        self.pc = instruction;
+    }
+
+    /// CALL - Call subroutine at given instruction
+    fn call(&mut self, _instruction: u16) {
+        // TODO
+    }
+
+    /// Get next instruction (and advance PC by 2 in doing so)
+    fn next_instruction(&mut self) -> u16 {
+        0 // TODO
+    }
+
+    // Helpers
+
     fn x(instruction: u16) -> usize {
         ((instruction & 0x0F00) >> 8) as u8 as usize
     }
