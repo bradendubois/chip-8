@@ -30,12 +30,12 @@ impl Chip {
         Chip::load_fonts(&mut memory);
 
         for (i, x) in data.iter().enumerate() {
-            memory[i + 200] = *x;
+            memory[i + 0x0200] = *x;
         }
 
         Chip {
             v: [0; 16],
-            pc: 0x0100,
+            pc: 0x0200,
             i: 0x0000,
             delay_timer: 0,
             sound_timer: 0,
@@ -49,10 +49,14 @@ impl Chip {
 
     pub fn run(&mut self) {
 
-        print!("{}[2J", 27 as char);
+        println!("cpu beginning");
+
+        self.draw_screen();
 
         loop {
+
             let instruction = self.next_instruction();
+            // println!("fetched: {:#04X}", instruction);
 
             self.execute(instruction);
         }
@@ -72,6 +76,14 @@ impl Chip {
 
             0x0000 => {
 
+                match nn {
+
+
+                    0xEE => self.ret(),
+
+                    _ => panic!("unmapped instruction: {}", instruction)
+
+                }
             },
 
             0x1000 => self.jump(nnn),
@@ -98,7 +110,7 @@ impl Chip {
 
             0x6000 => self.v[x] = nn,
 
-            0x7000 => self.v[x] += nn,
+            0x7000 => self.v[x] = self.v[x].wrapping_add(nn),
 
             0x8000 => {
 
@@ -184,7 +196,7 @@ impl Chip {
                             break
                         }
 
-                        let on = (sprite_row & (1 << column)) > 0;
+                        let on = (sprite_row & ((column as u8) << 1)) > 0;
                         let previous = self.display[row][px];
                         self.display[row][px] ^= on;
                         if self.display[row][px] != previous {
@@ -197,6 +209,8 @@ impl Chip {
                     true => self.v[F] = 01,
                     false => self.v[F] = 00
                 };
+
+                self.draw_screen();
             },
 
             0xE000 => {
@@ -291,6 +305,11 @@ impl Chip {
         self.pc = instruction
     }
 
+    /// RET - Return from a subroutine
+    fn ret(&mut self) {
+        self.pc = self.stack.pop().unwrap();
+    }
+
     /// Get next instruction (and advance PC by 2 in doing so)
     fn next_instruction(&mut self) -> u16 {
         let big = self.memory[(self.pc % 4096) as usize];
@@ -334,5 +353,18 @@ impl Chip {
         }
 
         assert!(i < 0x0200)
+    }
+
+    fn draw_screen(&self) {
+
+        print!("{}[2J", 27 as char);
+
+        for row in self.display.iter() {
+            for column in row.iter() {
+                if *column {
+                    print!("X");
+                }
+            } println!();
+        }
     }
 }
