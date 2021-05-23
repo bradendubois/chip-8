@@ -64,6 +64,8 @@ impl Chip {
 
     pub fn execute(&mut self, instruction: u16) {
 
+        let l = ((instruction & 0xF000) >> 12) as u8;
+
         let x = ((instruction & 0x0F00) >> 8) as u8 as usize;
         let y = ((instruction & 0x00F0) >> 4) as u8 as usize;
 
@@ -72,114 +74,80 @@ impl Chip {
         let n = (instruction & 0x000F) as u8;
 
         // Match the left-most digit for further matching
-        match instruction & 0xF000 {
+        match (l, x, y, n) {
 
-            0x0000 => {
+            (0x00, 0x00, 0x0E, 0x0E) => self.ret(),
 
-                match nn {
+            (0x01,    _,    _,    _) => self.jump(nnn),
+            (0x02,    _,    _,    _) => self.call(nnn),
+            (0x03,    _,    _,    _) => if self.v[x] == nn { self.skip() },
+            (0x04,    _,    _,    _) => if self.v[x] != nn { self.skip() },
+            (0x05,    _,    _,    _) => if self.v[x] == self.v[y] { self.skip() },
+            (0x06,    _,    _,    _) => self.v[x] = nn,
+            (0x07,    _,    _,    _) => self.v[x] = self.v[x].wrapping_add(nn),
 
-
-                    0xEE => self.ret(),
-
-                    _ => panic!("unmapped instruction: {}", instruction)
-
-                }
-            },
-
-            0x1000 => self.jump(nnn),
-
-            0x2000 => self.call(nnn),
-
-            0x3000 => {
-                if self.v[x] == nn {
-                    self.next_instruction();    // fetch (and skip) next instruction
-                }
-            },
-
-            0x4000 => {
-                if self.v[x] != nn {
-                    self.next_instruction();    // fetch (and skip) next instruction
-                }
-            },
-
-            0x5000 => {
-                if self.v[x] == self.v[y] {
-                    self.next_instruction();    // fetch (and skip) next instruction
-                }
-            },
-
-            0x6000 => self.v[x] = nn,
-
-            0x7000 => self.v[x] = self.v[x].wrapping_add(nn),
-
-            0x8000 => {
-
-                match instruction & 0x000F {
-                    0 => self.v[x] = self.v[y],
-                    1 => self.v[x] |= self.v[y],
-                    2 => self.v[x] &= self.v[y],
-                    3 => self.v[x] ^= self.v[y],
-                    4 => {
-                        match self.v[x].checked_add(self.v[y]) {
-                            Some(i) => {
-                                self.v[x] = i;
-                                self.v[F] = 00;
-                            },
-                            None => {
-                                self.v[x] = self.v[x].wrapping_add(self.v[y]);
-                                self.v[F] = 01;
-                            }
-                        }
-                    },
-                    5 => {
-                        match self.v[x].checked_sub(self.v[y]) {
-                            Some(i) => {
-                                self.v[x] = i;
-                                self.v[F] = 00;
-                            },
-                            None => {
-                                self.v[x] = self.v[x].wrapping_sub(self.v[y]);
-                                self.v[F] = 01;
-                            }
-                        }
-                    },
-                    6 => {
-                        self.v[F] = self.v[y] & 0x01;
-                        self.v[x] = self.v[y] >> 1;
-                    }
-                    7 => {
-                        match self.v[y].checked_sub(self.v[x]) {
-                            Some(i) => {
-                                self.v[x] = i;
-                                self.v[F] = 00;
-                            },
-                            None => {
-                                self.v[x] = self.v[y].wrapping_sub(self.v[x]);
-                                self.v[F] = 01;
-                            }
-                        }
-                    },
-                    8 => {
-                        self.v[F] = self.v[y] & 0x80;
-                        self.v[x] = self.v[y] << 1;
-                    },
-                    _ => panic!("unmapped instruction: {}", instruction)
+            (0x08,    _,    _, 0x00) => self.v[x]  = self.v[y],
+            (0x08,    _,    _, 0x01) => self.v[x] |= self.v[y],
+            (0x08,    _,    _, 0x02) => self.v[x] &= self.v[y],
+            (0x08,    _,    _, 0x03) => self.v[x] ^= self.v[y],
+            (0x08,    _,    _, 0x04) => {
+                self.v[x] = self.v[x].wrapping_sub(self.v[y]);
+                self.v[F] = match self.v[x].checked_sub(self.v[y]) {
+                    Some(_) => 0,
+                    None => 1
                 };
             },
 
-            0x9000 => {
+            (0x08,    _,    _, 0x05) => {
+                match self.v[x].checked_sub(self.v[y]) {
+                    Some(i) => {
+                        self.v[x] = i;
+                        self.v[F] = 00;
+                    },
+                    None => {
+                        self.v[x] = self.v[x].wrapping_sub(self.v[y]);
+                        self.v[F] = 01;
+                    }
+                }
+            },
+
+            (0x08,    _,    _, 0x06) => {
+                self.v[F] = self.v[y] & 0x01;
+                self.v[x] = self.v[y] >> 1;
+            },
+
+            (0x08,    _,    _, 0x07) => {
+                match self.v[y].checked_sub(self.v[x]) {
+                    Some(i) => {
+                        self.v[x] = i;
+                        self.v[F] = 00;
+                    },
+                    None => {
+                        self.v[x] = self.v[y].wrapping_sub(self.v[x]);
+                        self.v[F] = 01;
+                    }
+                }
+            },
+
+            (0x08,    _,    _, 0x0E) => {
+                self.v[F] = self.v[y] & 0x80;
+                self.v[x] = self.v[y] << 1;
+            },
+
+
+            (0x09, _, _, 0x00) => {
                 if self.v[x] != self.v[y] {
                     self.next_instruction();
                 }
             },
 
-            0xA000 => self.i = nnn,
+            (0x0A, _, _, _) => self.i = nnn,
 
-            0xB000 => self.jump(nnn + self.v[0] as u16),
+            (0x0B, _, _, _) => self.jump(nnn + self.v[0] as u16),
 
-            0xC000 => self.v[x] = rand::thread_rng().gen_range(0x00 ..= 0xFF) & nn,
+            (0x0C, _, _, _) => self.v[x] = rand::thread_rng().gen_range(0x00 ..= 0xFF) & nn,
 
-            0xD000 => {
+            (0x0D, _, _, _) => {
 
                 let py = (self.v[x] % 32) as usize;
                 let px = (self.v[y] % 64) as usize;
@@ -213,79 +181,53 @@ impl Chip {
                 self.draw_screen();
             },
 
-            0xE000 => {
-                match nn {
-                    0x9E => {
-                        if self.is_pressed(self.v[x]) {
-                            self.next_instruction();
-                        }
-                    },
+            (0x0E, _, 0x09, 0x0E) => if  self.is_pressed(self.v[x]) { self.skip() },
+            (0x0E, _, 0x0A, 0x01) => if !self.is_pressed(self.v[x]) { self.skip() },
 
-                    0xA1 => {
-                        if !self.is_pressed(self.v[x]) {
-                            self.next_instruction();
-                        }
-                    },
+            (0x0F, _, 0x00, 0x07) => self.v[x] = self.delay_timer,
+            (0x0F, _, 0x00, 0x0A) => {
+                loop {
 
-                    _ => panic!("unmapped instruction: {}", instruction)
-                }
-            },
+                    let keys = self.device_state.get_keys();
 
-            0xF000 => {
-
-                match nn {
-
-                    0x07 => self.v[x] = self.delay_timer,
-                    0x0A => {
-                        loop {
-
-                            let keys = self.device_state.get_keys();
-
-                            for (code, keycode) in self.keymap.iter() {
-                                if keys.contains(keycode) {
-                                    self.v[x] = *code;
-                                    break;
-                                }
-                            }
-
-                            sleep(Duration::new(0, 1000000000));
-
-                            if self.delay_timer > 0 {
-                                self.delay_timer -= 1;
-                            }
-                        }
-                    },
-
-                    0x15 => self.delay_timer = self.v[x],
-                    0x18 => self.sound_timer = self.v[x],
-                    0x1E => self.i += self.v[x] as u16,
-                    0x29 => self.i = self.v[x] as u16,
-                    0x33 => {
-                        self.memory[self.i as usize] = self.v[x] / 100;
-                        self.memory[self.i as usize] = (self.v[x] % 100) / 10;
-                        self.memory[self.i as usize] = self.v[x] % 10;
-
-                    },
-                    0x55 => {
-                        for i in 0..x {
-                            self.memory[self.i as usize] = self.v[i];
-                            self.i += 1;
-                        }
-                    },
-
-                    0x65 => {
-                        for i in 0..x {
-                            self.v[i] = self.memory[self.i as usize];
-                            self.i += 1;
+                    for (code, keycode) in self.keymap.iter() {
+                        if keys.contains(keycode) {
+                            self.v[x] = *code;
+                            break;
                         }
                     }
 
-                    _ => panic!("unmapped instruction: {}", instruction)
+                    sleep(Duration::new(0, 1000000000));
 
+                    if self.delay_timer > 0 {
+                        self.delay_timer -= 1;
+                    }
+                }
+            },
+            (0x0F, _, 0x01, 0x05) => self.delay_timer = self.v[x],
+            (0x0F, _, 0x01, 0x08) => self.sound_timer = self.v[x],
+            (0x0F, _, 0x01, 0x0E) => self.i += self.v[x] as u16,
+            (0x0F, _, 0x02, 0x09) => self.i = self.v[x] as u16,
+            (0x0F, _, 0x03, 0x03) => {
+                self.memory[self.i as usize] = self.v[x] / 100;
+                self.memory[self.i as usize] = (self.v[x] % 100) / 10;
+                self.memory[self.i as usize] = self.v[x] % 10;
+
+            },
+            (0x0F, _, 0x05, 0x05) => {
+                for i in 0..x {
+                    self.memory[self.i as usize] = self.v[i];
+                    self.i += 1;
+                }
+            },
+            (0x0F, _, 0x06, 0x05) => {
+                for i in 0..x {
+                    self.v[i] = self.memory[self.i as usize];
+                    self.i += 1;
                 }
             },
 
-            _ => panic!("unknown instruction: {}", instruction)
+            _ => panic!("unknown instruction: {:#06X}", instruction)
         };
 
         if self.delay_timer > 0 {
@@ -366,5 +308,9 @@ impl Chip {
                 }
             } println!();
         }
+    }
+
+    fn skip(&mut self) {
+        self.pc = self.pc.wrapping_add(2);
     }
 }
