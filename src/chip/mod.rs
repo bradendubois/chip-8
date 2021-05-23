@@ -6,6 +6,10 @@ use rand::Rng;
 use std::thread::sleep;
 use std::time::Duration;
 
+const F: usize = 0x0F;
+const DISPLAY_WIDTH: usize = 64;
+const DISPLAY_HEIGHT: usize = 32;
+
 pub struct Chip {
     v: [u8; 16],
     pc: u16,
@@ -14,12 +18,13 @@ pub struct Chip {
     sound_timer: u8,
     stack: Vec<u16>,
     memory: [u8; 4096],
-    display: [[bool; 64]; 32],
+    display: [[bool; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
     keymap: HashMap<u8, Keycode>,
-    device_state: DeviceState
+    device_state: DeviceState,
+    keypad_wait: bool,
+    keypad_x: usize
 }
 
-const F: usize = 0x0F;
 
 impl Chip {
 
@@ -41,24 +46,46 @@ impl Chip {
             sound_timer: 0,
             stack: Vec::new(),
             memory,
-            display: [[false; 64]; 32],
+            display: [[false; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
             keymap,
-            device_state: DeviceState::new()
+            device_state: DeviceState::new(),
+            keypad_wait: false,
+            keypad_x: 0
         }
     }
 
     pub fn run(&mut self) {
 
-        println!("cpu beginning");
-
-        self.draw_screen();
-
         loop {
 
-            let instruction = self.next_instruction();
-            // println!("fetched: {:#04X}", instruction);
+            if self.keypad_wait {
+                let keys = self.device_state.get_keys();
 
-            self.execute(instruction);
+                for (code, keycode) in self.keymap.iter() {
+                    if keys.contains(keycode) {
+                        self.v[self.keypad_x] = *code;
+                        self.keypad_wait = false;
+                        break;
+                    }
+                }
+            } else {
+
+                if self.delay_timer > 0 {
+                    self.delay_timer -= 1;
+                }
+
+                if self.sound_timer > 0 {
+                    self.sound_timer -= 1;
+                }
+
+                let instruction = self.next_instruction();
+                // println!("fetched: {:#04X}", instruction);
+
+                self.execute(instruction);
+
+            }
+
+            sleep(Duration::new(0, 100000000));
         }
     }
 
@@ -76,6 +103,7 @@ impl Chip {
         // Match the left-most digit for further matching
         match (l, x, y, n) {
 
+            (0x00, 0x00, 0x0E, 0x00) => self.clear(),
             (0x00, 0x00, 0x0E, 0x0E) => self.ret(),
 
             (0x01,    _,    _,    _) => self.jump(nnn),
@@ -99,39 +127,29 @@ impl Chip {
             },
 
             (0x08,    _,    _, 0x05) => {
+                self.v[x] = self.v[x].wrapping_sub(self.v[y]);
                 match self.v[x].checked_sub(self.v[y]) {
-                    Some(i) => {
-                        self.v[x] = i;
-                        self.v[F] = 00;
-                    },
-                    None => {
-                        self.v[x] = self.v[x].wrapping_sub(self.v[y]);
-                        self.v[F] = 01;
-                    }
+                    Some(_) => self.v[F] = 00,
+                    None => self.v[F] = 01
                 }
             },
 
             (0x08,    _,    _, 0x06) => {
-                self.v[F] = self.v[y] & 0x01;
-                self.v[x] = self.v[y] >> 1;
+                self.v[F] = self.v[x] & 0x01;
+                self.v[x] >>= 1;
             },
 
             (0x08,    _,    _, 0x07) => {
+                self.v[x] = self.v[y].wrapping_sub(self.v[x]);
                 match self.v[y].checked_sub(self.v[x]) {
-                    Some(i) => {
-                        self.v[x] = i;
-                        self.v[F] = 00;
-                    },
-                    None => {
-                        self.v[x] = self.v[y].wrapping_sub(self.v[x]);
-                        self.v[F] = 01;
-                    }
+                    Some(_) => self.v[F] = 00,
+                    None => self.v[F] = 01
                 }
             },
 
             (0x08,    _,    _, 0x0E) => {
-                self.v[F] = self.v[y] & 0x80;
-                self.v[x] = self.v[y] << 1;
+                self.v[F] = (self.v[x] & 0x80) >> 7;
+                self.v[x] <<= 1;
             },
 
 
@@ -149,36 +167,32 @@ impl Chip {
 
             (0x0D, _, _, _) => {
 
-                let py = (self.v[x] % 32) as usize;
-                let px = (self.v[y] % 64) as usize;
+                self.v[F] = 0;
 
-                let mut change = false;
+                for row in 0..n {
 
-                for row in 0..(min(py + ((n / 8) as usize), 32)) {
+                    let py = ((self.v[y] + row) % DISPLAY_HEIGHT as u8) as usize;
 
                     let sprite_row = self.memory[(self.i + (n as u16)) as usize];
 
-                    for column in (px..min(px + 8, 64)).rev() {
+                    println!("row {} {:#04X} {:#10b}", row, sprite_row, sprite_row);
 
-                        if px + column >= 64 {
-                            break
+                    for column in 0..8 {
+
+                        let px = ((self.v[x] + column) % DISPLAY_WIDTH as u8) as usize;
+
+                        let on = (sprite_row & (0x80 >> column)) > 0;
+
+                        if self.display[py][px] {
+                            self.v[F] = 1;
                         }
 
-                        let on = (sprite_row & ((column as u8) << 1)) > 0;
-                        let previous = self.display[row][px];
-                        self.display[row][px] ^= on;
-                        if self.display[row][px] != previous {
-                            change = true;
-                        }
+                        self.display[py][px] ^= on;
                     }
                 }
 
-                match change {
-                    true => self.v[F] = 01,
-                    false => self.v[F] = 00
-                };
-
                 self.draw_screen();
+
             },
 
             (0x0E, _, 0x09, 0x0E) => if  self.is_pressed(self.v[x]) { self.skip() },
@@ -186,44 +200,27 @@ impl Chip {
 
             (0x0F, _, 0x00, 0x07) => self.v[x] = self.delay_timer,
             (0x0F, _, 0x00, 0x0A) => {
-                loop {
-
-                    let keys = self.device_state.get_keys();
-
-                    for (code, keycode) in self.keymap.iter() {
-                        if keys.contains(keycode) {
-                            self.v[x] = *code;
-                            break;
-                        }
-                    }
-
-                    sleep(Duration::new(0, 1000000000));
-
-                    if self.delay_timer > 0 {
-                        self.delay_timer -= 1;
-                    }
-                }
+                self.keypad_wait = true;
+                self.keypad_x = x;
             },
             (0x0F, _, 0x01, 0x05) => self.delay_timer = self.v[x],
             (0x0F, _, 0x01, 0x08) => self.sound_timer = self.v[x],
             (0x0F, _, 0x01, 0x0E) => self.i += self.v[x] as u16,
-            (0x0F, _, 0x02, 0x09) => self.i = self.v[x] as u16,
+            (0x0F, _, 0x02, 0x09) => self.i = (self.v[x] * 5) as u16,
             (0x0F, _, 0x03, 0x03) => {
                 self.memory[self.i as usize] = self.v[x] / 100;
-                self.memory[self.i as usize] = (self.v[x] % 100) / 10;
+                self.memory[self.i as usize] = (self.v[x] / 10) % 10;
                 self.memory[self.i as usize] = self.v[x] % 10;
 
             },
             (0x0F, _, 0x05, 0x05) => {
-                for i in 0..x {
-                    self.memory[self.i as usize] = self.v[i];
-                    self.i += 1;
+                for i in 0..=x {
+                    self.memory[(self.i + i as u16) as usize] = self.v[i];
                 }
             },
             (0x0F, _, 0x06, 0x05) => {
-                for i in 0..x {
-                    self.v[i] = self.memory[self.i as usize];
-                    self.i += 1;
+                for i in 0..=x {
+                    self.v[i] = self.memory[(self.i + i as u16) as usize];
                 }
             },
 
@@ -244,7 +241,7 @@ impl Chip {
     /// CALL - Call subroutine at given instruction
     fn call(&mut self, instruction: u16) {
         self.stack.push(self.pc);
-        self.pc = instruction
+        self.jump(instruction);
     }
 
     /// RET - Return from a subroutine
@@ -304,9 +301,22 @@ impl Chip {
         for row in self.display.iter() {
             for column in row.iter() {
                 if *column {
-                    print!("X");
+                    print!("█");
+                } else {
+                    print!(" ");
                 }
             } println!();
+        }
+
+        //println!("{:?}", self.display);
+    }
+
+    fn clear(&mut self) {
+        print!("{}[2J", 27 as char);
+        for y in  0..DISPLAY_HEIGHT {
+            for x in 0..DISPLAY_WIDTH {
+                self.display[y][x] = false;
+            }
         }
     }
 

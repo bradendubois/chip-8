@@ -31,7 +31,7 @@ fn main() {
     keymap.insert(0xB as u8, Keycode::C);
     keymap.insert(0xF as u8, Keycode::V);
 
-    let file = "./roms/pong.rom";
+    let file = "./roms/c8_test.c8";
 
     if let Ok(bytes) = fs::read(file) {
 
