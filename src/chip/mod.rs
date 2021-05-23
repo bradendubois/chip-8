@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::collections::HashMap;
 
 use device_query::{DeviceState, DeviceQuery, Keycode};
@@ -38,6 +37,14 @@ impl Chip {
             memory[i + 0x0200] = *x;
         }
 
+        /*
+        memory[0x0200] = 0xF0;
+        memory[0x0201] = 0x29;
+        memory[0x0202] = 0xD0;
+        memory[0x0203] = 0x15;
+
+
+         */
         Chip {
             v: [0; 16],
             pc: 0x0200,
@@ -119,10 +126,11 @@ impl Chip {
             (0x08,    _,    _, 0x02) => self.v[x] &= self.v[y],
             (0x08,    _,    _, 0x03) => self.v[x] ^= self.v[y],
             (0x08,    _,    _, 0x04) => {
-                self.v[x] = self.v[x].wrapping_sub(self.v[y]);
-                self.v[F] = match self.v[x].checked_sub(self.v[y]) {
-                    Some(_) => 0,
-                    None => 1
+                let (result, overflow) = self.v[x].overflowing_add(self.v[y]);
+                self.v[x] = result;
+                self.v[F] = match overflow {
+                    true  => 1,
+                    false => 0,
                 };
             },
 
@@ -140,10 +148,11 @@ impl Chip {
             },
 
             (0x08,    _,    _, 0x07) => {
-                self.v[x] = self.v[y].wrapping_sub(self.v[x]);
-                match self.v[y].checked_sub(self.v[x]) {
-                    Some(_) => self.v[F] = 00,
-                    None => self.v[F] = 01
+                let (result, underflow) = self.v[y].overflowing_sub(self.v[x]);
+                self.v[x] = result;
+                self.v[F] = match underflow {
+                    true  => 00,
+                    false => 01
                 }
             },
 
@@ -173,7 +182,7 @@ impl Chip {
 
                     let py = ((self.v[y] + row) % DISPLAY_HEIGHT as u8) as usize;
 
-                    let sprite_row = self.memory[(self.i + (n as u16)) as usize];
+                    let sprite_row = self.memory[(self.i + (row as u16)) as usize];
 
                     println!("row {} {:#04X} {:#10b}", row, sprite_row, sprite_row);
 
@@ -183,7 +192,7 @@ impl Chip {
 
                         let on = (sprite_row & (0x80 >> column)) > 0;
 
-                        if self.display[py][px] {
+                        if !(self.display[py][px] ^ on)  {
                             self.v[F] = 1;
                         }
 
@@ -224,7 +233,7 @@ impl Chip {
                 }
             },
 
-            _ => panic!("unknown instruction: {:#06X}", instruction)
+            _ => panic!("unknown instruction: {:#06X}, pc = {:#06X}", instruction, self.pc)
         };
 
         if self.delay_timer > 0 {
