@@ -218,8 +218,8 @@ impl Chip {
             (0x0F, _, 0x02, 0x09) => self.i = (self.v[x] * 5) as u16,
             (0x0F, _, 0x03, 0x03) => {
                 self.memory[self.i as usize] = self.v[x] / 100;
-                self.memory[self.i as usize] = (self.v[x] / 10) % 10;
-                self.memory[self.i as usize] = self.v[x] % 10;
+                self.memory[(self.i + (1 as u16)) as usize] = (self.v[x] / 10) % 10;
+                self.memory[(self.i + (2 as u16)) as usize] = self.v[x] % 10;
 
             },
             (0x0F, _, 0x05, 0x05) => {
