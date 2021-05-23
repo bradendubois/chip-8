@@ -4,6 +4,8 @@ use device_query::{DeviceState, DeviceQuery, Keycode};
 use rand::Rng;
 use std::thread::sleep;
 use std::time::Duration;
+use std::io;
+use std::io::Write;
 
 const F: usize = 0x0F;
 const DISPLAY_WIDTH: usize = 64;
@@ -17,11 +19,9 @@ pub struct Chip {
     sound_timer: u8,
     stack: Vec<u16>,
     memory: [u8; 4096],
-    display: [[bool; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
+    display_ram: [[bool; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
     keymap: HashMap<u8, Keycode>,
     device_state: DeviceState,
-    keypad_wait: bool,
-    keypad_x: usize
 }
 
 
@@ -37,14 +37,6 @@ impl Chip {
             memory[i + 0x0200] = *x;
         }
 
-        /*
-        memory[0x0200] = 0xF0;
-        memory[0x0201] = 0x29;
-        memory[0x0202] = 0xD0;
-        memory[0x0203] = 0x15;
-
-
-         */
         Chip {
             v: [0; 16],
             pc: 0x0200,
@@ -53,11 +45,9 @@ impl Chip {
             sound_timer: 0,
             stack: Vec::new(),
             memory,
-            display: [[false; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
+            display_ram: [[false; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
             keymap,
             device_state: DeviceState::new(),
-            keypad_wait: false,
-            keypad_x: 0
         }
     }
 
@@ -65,34 +55,19 @@ impl Chip {
 
         loop {
 
-            if self.keypad_wait {
-                let keys = self.device_state.get_keys();
-
-                for (code, keycode) in self.keymap.iter() {
-                    if keys.contains(keycode) {
-                        self.v[self.keypad_x] = *code;
-                        self.keypad_wait = false;
-                        break;
-                    }
-                }
-            } else {
-
-                if self.delay_timer > 0 {
-                    self.delay_timer -= 1;
-                }
-
-                if self.sound_timer > 0 {
-                    self.sound_timer -= 1;
-                }
-
-                let instruction = self.next_instruction();
-                // println!("fetched: {:#04X}", instruction);
-
-                self.execute(instruction);
-
+            if self.delay_timer > 0 {
+                self.delay_timer -= 1;
             }
 
-            sleep(Duration::new(0, 100000000));
+            if self.sound_timer > 0 {
+                self.sound_timer -= 1;
+            }
+
+            let instruction = self.next_instruction();
+
+            self.execute(instruction);
+
+            sleep(Duration::from_millis(2));
         }
     }
 
@@ -181,27 +156,22 @@ impl Chip {
                 for row in 0..n {
 
                     let py = ((self.v[y] + row) % DISPLAY_HEIGHT as u8) as usize;
-
                     let sprite_row = self.memory[(self.i + (row as u16)) as usize];
-
-                    println!("row {} {:#04X} {:#10b}", row, sprite_row, sprite_row);
 
                     for column in 0..8 {
 
                         let px = ((self.v[x] + column) % DISPLAY_WIDTH as u8) as usize;
-
                         let on = (sprite_row & (0x80 >> column)) > 0;
 
-                        if !(self.display[py][px] ^ on)  {
+                        if !(self.display_ram[py][px] ^ on)  {
                             self.v[F] = 1;
                         }
 
-                        self.display[py][px] ^= on;
+                        self.display_ram[py][px] ^= on;
                     }
                 }
 
                 self.draw_screen();
-
             },
 
             (0x0E, _, 0x09, 0x0E) => if  self.is_pressed(self.v[x]) { self.skip() },
@@ -209,8 +179,15 @@ impl Chip {
 
             (0x0F, _, 0x00, 0x07) => self.v[x] = self.delay_timer,
             (0x0F, _, 0x00, 0x0A) => {
-                self.keypad_wait = true;
-                self.keypad_x = x;
+                loop {
+                    let keys = self.device_state.get_keys();
+                    for (code, keycode) in self.keymap.iter() {
+                        if keys.contains(keycode) {
+                            self.v[x] = *code;
+                            break;
+                        }
+                    }
+                }
             },
             (0x0F, _, 0x01, 0x05) => self.delay_timer = self.v[x],
             (0x0F, _, 0x01, 0x08) => self.sound_timer = self.v[x],
@@ -304,10 +281,10 @@ impl Chip {
     }
 
     fn draw_screen(&self) {
+        
+        io::stdout().flush();
 
-        print!("{}[2J", 27 as char);
-
-        for row in self.display.iter() {
+        for row in self.display_ram.iter() {
             for column in row.iter() {
                 if *column {
                     print!("█");
@@ -324,7 +301,7 @@ impl Chip {
         print!("{}[2J", 27 as char);
         for y in  0..DISPLAY_HEIGHT {
             for x in 0..DISPLAY_WIDTH {
-                self.display[y][x] = false;
+                self.display_ram[y][x] = false;
             }
         }
     }
