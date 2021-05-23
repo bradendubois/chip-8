@@ -1,6 +1,6 @@
 mod chip;
 
-use device_query::{DeviceQuery, DeviceState, Keycode};
+use device_query::Keycode;
 
 fn main() {
 
@@ -30,13 +30,8 @@ fn main() {
     keymap.insert(0xB as u8, Keycode::C);
     keymap.insert(0xF as u8, Keycode::V);
 
-    keymap.insert(0x1 as u8, Keycode::Key1);
 
-    let device_state = DeviceState::new();
-    loop {
-        let keys: Vec<Keycode> = device_state.get_keys();
-        for key in keys.iter() {
+    let mut chip = chip::Chip::new(vec![], keymap);
 
-        }
-    }
+    chip.run();
 }
