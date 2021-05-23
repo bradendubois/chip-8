@@ -19,6 +19,7 @@ pub struct Chip {
     sound_timer: u8,
     stack: Vec<u16>,
     memory: [u8; 4096],
+    display: io::Stdout,
     display_ram: [[bool; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
     keymap: HashMap<u8, Keycode>,
     device_state: DeviceState,
@@ -45,6 +46,7 @@ impl Chip {
             sound_timer: 0,
             stack: Vec::new(),
             memory,
+            display: io::stdout(),
             display_ram: [[false; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
             keymap,
             device_state: DeviceState::new(),
@@ -280,9 +282,10 @@ impl Chip {
         assert!(i < 0x0200)
     }
 
-    fn draw_screen(&self) {
-        
-        io::stdout().flush();
+    #[allow(unused_must_use)]
+    fn draw_screen(&mut self) {
+
+        self.display.flush();
 
         for row in self.display_ram.iter() {
             for column in row.iter() {
@@ -293,8 +296,6 @@ impl Chip {
                 }
             } println!();
         }
-
-        //println!("{:?}", self.display);
     }
 
     fn clear(&mut self) {

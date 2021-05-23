@@ -1,7 +1,10 @@
 mod chip;
 
-use device_query::Keycode;
 use std::fs;
+use std::env;
+
+use device_query::Keycode;
+use std::process::exit;
 
 fn main() {
 
@@ -31,12 +34,20 @@ fn main() {
     keymap.insert(0xB as u8, Keycode::C);
     keymap.insert(0xF as u8, Keycode::V);
 
-    let file = "./roms/pong.rom";
+    let args: Vec<String> = env::args().collect();
 
-    if let Ok(bytes) = fs::read(file) {
+    if args.len() < 2 {
+        println!("provide the path to a ROM as a command-line argument!");
+        exit(0);
+    }
 
-        let mut chip = chip::Chip::new(bytes, keymap);
+    let file = &args[1];
 
-        chip.run();
+    match fs::read(file) {
+        Ok(bytes) => {
+            let mut chip = chip::Chip::new(bytes, keymap);
+            chip.run();
+        },
+        Err(i) => panic!("{}", i)
     }
 }
