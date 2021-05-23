@@ -1,6 +1,7 @@
 mod chip;
 
 use device_query::Keycode;
+use std::fs;
 
 fn main() {
 
@@ -30,8 +31,12 @@ fn main() {
     keymap.insert(0xB as u8, Keycode::C);
     keymap.insert(0xF as u8, Keycode::V);
 
+    let file = "./roms/pong.rom";
 
-    let mut chip = chip::Chip::new(vec![], keymap);
+    if let Ok(bytes) = fs::read(file) {
 
-    chip.run();
+        let mut chip = chip::Chip::new(bytes, keymap);
+
+        chip.run();
+    }
 }
